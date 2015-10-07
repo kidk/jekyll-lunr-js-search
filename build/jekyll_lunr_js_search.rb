@@ -1,3 +1,13 @@
+module Jekyll
+  module LunrJsSearch  
+    class SearchIndexFile < Jekyll::StaticFile
+      # Override write as the index.json index file has already been created 
+      def write(dest)
+        true
+      end
+    end
+  end
+end
 require 'fileutils'
 require 'net/http'
 require 'json'
@@ -9,8 +19,8 @@ module Jekyll
     class Indexer < Jekyll::Generator
       def initialize(config = {})
         super(config)
-        
-        lunr_config = { 
+
+        lunr_config = {
           'excludes' => [],
           'strip_index_html' => false,
           'min_length' => 3,
@@ -40,8 +50,8 @@ module Jekyll
         @lunr_version = ctx.eval('lunr.version')
         @docs = {}
         @excludes = lunr_config['excludes']
-        
-        # if web host supports index.html as default doc, then optionally exclude it from the url 
+
+        # if web host supports index.html as default doc, then optionally exclude it from the url
         @strip_index_html = lunr_config['strip_index_html']
 
         # stop word exclusion configuration
@@ -64,8 +74,8 @@ module Jekyll
           entry = SearchEntry.create(item, content_renderer)
 
           entry.strip_index_suffix_from_url! if @strip_index_html
-          entry.strip_stopwords!(stopwords, @min_length) if File.exists?(@stopwords_file) 
-          
+          entry.strip_stopwords!(stopwords, @min_length) if File.exists?(@stopwords_file)
+
           doc = {
             "id" => i,
             "title" => entry.title,
@@ -77,20 +87,20 @@ module Jekyll
           @index.add(doc)
           doc.delete("body")
           @docs[i] = doc
-          
+
           Jekyll.logger.debug "Lunr:", (entry.title ? "#{entry.title} (#{entry.url})" : entry.url)
         end
-        
+
         FileUtils.mkdir_p(File.join(site.dest, @js_dir))
         filename = File.join(@js_dir, 'index.json')
-        
+
         total = {
           "docs" => @docs,
           "index" => @index.to_hash
         }
 
         filepath = File.join(site.dest, filename)
-        File.open(filepath, "w") { |f| f.write(total.to_json(:max_nesting => 150)) }
+        File.open(filepath, "w") { |f| f.write(total.to_json(:max_nesting => 300)) }
         Jekyll.logger.info "Lunr:", "Index ready (lunr.js v#{@lunr_version})"
         added_files = [filename]
 
@@ -111,7 +121,7 @@ module Jekyll
       end
 
       private
-      
+
       # load the stopwords file
       def stopwords
         @stopwords ||= IO.readlines(@stopwords_file).map { |l| l.strip }
@@ -124,64 +134,23 @@ module Jekyll
           doc.output_ext
         end
       end
-      
+
       def pages_to_index(site)
         items = []
-        
+
         # deep copy pages
         site.pages.each {|page| items << page.dup }
         site.posts.each {|post| items << post.dup }
         site.documents.each {|document| items << document.dup }
 
-        # only process files that will be converted to .html and only non excluded files 
+        # only process files that will be converted to .html and only non excluded files
         items.select! {|i| output_ext(i) == '.html' && ! @excludes.any? {|s| (i.url =~ Regexp.new(s)) != nil } }
-        items.reject! {|i| i.data['exclude_from_search'] } 
-        
+        items.reject! {|i| i.data['exclude_from_search'] }
+
         items
       end
     end
   end
-end
-require "v8"
-require "json"
-
-class V8::Object
-  def to_json
-    @context['JSON']['stringify'].call(self)
-  end
-
-  def to_hash
-    JSON.parse(to_json, :max_nesting => 150)
-  end
-end
-require 'nokogiri'
-
-module Jekyll
-  module LunrJsSearch
-    class PageRenderer
-      def initialize(site)
-        @site = site
-      end
-      
-      def prepare(item)
-        if item.is_a?(Jekyll::Document)
-          Jekyll::Renderer.new(@site, item).run        
-        else
-          item.data = item.data.dup
-          item.data.delete("layout")
-          item.render({}, @site.site_payload)
-          item.output
-        end
-      end
-
-      # render the item, parse the output and get all text inside <p> elements
-      def render(item)
-        layoutless = item.dup
-
-        Nokogiri::HTML(prepare(layoutless)).text
-      end
-    end
-  end  
 end
 require 'nokogiri'
 
@@ -231,17 +200,48 @@ module Jekyll
   end
 end
 module Jekyll
-  module LunrJsSearch  
-    class SearchIndexFile < Jekyll::StaticFile
-      # Override write as the index.json index file has already been created 
-      def write(dest)
-        true
-      end
-    end
-  end
-end
-module Jekyll
   module LunrJsSearch
     VERSION = "0.3.0"
+  end
+end
+require 'nokogiri'
+
+module Jekyll
+  module LunrJsSearch
+    class PageRenderer
+      def initialize(site)
+        @site = site
+      end
+      
+      def prepare(item)
+        if item.is_a?(Jekyll::Document)
+          Jekyll::Renderer.new(@site, item).run        
+        else
+          item.data = item.data.dup
+          item.data.delete("layout")
+          item.render({}, @site.site_payload)
+          item.output
+        end
+      end
+
+      # render the item, parse the output and get all text inside <p> elements
+      def render(item)
+        layoutless = item.dup
+
+        Nokogiri::HTML(prepare(layoutless)).text
+      end
+    end
+  end  
+end
+require "v8"
+require "json"
+
+class V8::Object
+  def to_json
+    @context['JSON']['stringify'].call(self)
+  end
+
+  def to_hash
+    JSON.parse(to_json, :max_nesting => 300)
   end
 end
